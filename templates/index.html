@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>OpenAI Codex Chat</title>
+</head>
+<body>
+    <h1>OpenAI Codex Chat</h1>
+    <form action="" method="post">
+        <label for="api_key">OpenAI API Key:</label>
+        <input type="password" id="api_key" name="api_key" placeholder="sk-..." autocomplete="off"><br><br>
+
+        <label for="model">Model:</label>
+        <input type="text" id="model" name="model" value="{{ default_model }}"><br><br>
+
+        <label for="chat_input">Message:</label>
+        <textarea id="chat_input" name="chat_input" rows="6" cols="60"></textarea><br><br>
+
+        <input type="submit" value="Submit">
+    </form>
+
+    {% if error_message %}
+    <h3 style="color: #b00020;">Error</h3>
+    <pre>{{ error_message }}</pre>
+    {% endif %}
+
+    {% if response_text %}
+    <h3>Response</h3>
+    <pre>{{ response_text }}</pre>
+    {% endif %}
+</body>
+</html>
