@@ -2,25 +2,63 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>OpenAI Codex Chat</title>
+    <title>Codex Browser Login Chat</title>
+    <style>
+        body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; max-width: 900px; }
+        .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+        .ok { color: #0b7a20; }
+        .err { color: #b00020; }
+        textarea { width: 100%; box-sizing: border-box; }
+        input[type="text"] { width: 100%; max-width: 500px; }
+        button { padding: 8px 14px; cursor: pointer; }
+        pre { background: #f6f8fa; padding: 12px; border-radius: 6px; white-space: pre-wrap; word-break: break-word; }
+    </style>
 </head>
 <body>
-    <h1>OpenAI Codex Chat</h1>
-    <form action="" method="post">
-        <label for="api_key">OpenAI API Key:</label>
-        <input type="password" id="api_key" name="api_key" placeholder="sk-..." autocomplete="off"><br><br>
+    <h1>Codex Chat (Browser Login)</h1>
 
-        <label for="model">Model:</label>
-        <input type="text" id="model" name="model" value="{{ default_model }}"><br><br>
+    <div class="card">
+        <h3>Login Status</h3>
+        <p>
+            Status:
+            {% if auth_state.logged_in %}
+            <strong class="ok">Logged in</strong>
+            {% else %}
+            <strong class="err">Not logged in</strong>
+            {% endif %}
+        </p>
+        <p>Auth mode: <code>{{ auth_state.auth_mode or "unknown" }}</code></p>
+        <p>Account ID: <code>{{ auth_state.account_id or "unknown" }}</code></p>
+        <p>Access token: <code>{{ auth_state.token_preview or "not found" }}</code></p>
+        <p>Auth file: <code>{{ auth_state.auth_path }}</code></p>
+        {% if auth_state.error %}
+        <p class="err">{{ auth_state.error }}</p>
+        {% endif %}
+        <form action="" method="post">
+            <input type="hidden" name="action" value="login">
+            <button type="submit">Login With Browser</button>
+        </form>
+    </div>
 
-        <label for="chat_input">Message:</label>
-        <textarea id="chat_input" name="chat_input" rows="6" cols="60"></textarea><br><br>
+    <div class="card">
+        <h3>Chat</h3>
+        <form action="" method="post">
+            <input type="hidden" name="action" value="chat">
+            <label for="model">Model</label><br>
+            <input type="text" id="model" name="model" value="{{ model or default_model }}"><br><br>
+            <label for="chat_input">Message</label><br>
+            <textarea id="chat_input" name="chat_input" rows="6"></textarea><br><br>
+            <button type="submit">Send To Codex</button>
+        </form>
+    </div>
 
-        <input type="submit" value="Submit">
-    </form>
+    {% if info_message %}
+    <h3 class="ok">Info</h3>
+    <pre>{{ info_message }}</pre>
+    {% endif %}
 
     {% if error_message %}
-    <h3 style="color: #b00020;">Error</h3>
+    <h3 class="err">Error</h3>
     <pre>{{ error_message }}</pre>
     {% endif %}
 
@@ -28,5 +66,10 @@
     <h3>Response</h3>
     <pre>{{ response_text }}</pre>
     {% endif %}
+
+    <p>
+        This app uses project-local Codex auth from <code>./.codex/auth.json</code> and sends prompts with <code>codex exec</code>.
+        No <code>sk-</code> key is required.
+    </p>
 </body>
 </html>
