@@ -31,6 +31,7 @@
         <p>Account ID: <code>{{ auth_state.account_id or "unknown" }}</code></p>
         <p>Access token: <code>{{ auth_state.token_preview or "not found" }}</code></p>
         <p>Auth file: <code>{{ auth_state.auth_path }}</code></p>
+        <p>Codex CLI: <code>{{ auth_state.codex_cli_path }}</code></p>
         {% if auth_state.error %}
         <p class="err">{{ auth_state.error }}</p>
         {% endif %}

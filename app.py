@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -53,9 +54,13 @@ def index():
 
 
 def codex_login():
+    codex_exe = resolve_codex_executable()
+    if codex_exe is None:
+        return False, codex_not_found_message()
+
     try:
         proc = subprocess.run(
-            ["codex", "login"],
+            [codex_exe, "login"],
             capture_output=True,
             text=True,
             timeout=300,
@@ -76,13 +81,16 @@ def codex_login():
 
 def chat_with_codex(message, model):
     output_file = None
+    codex_exe = resolve_codex_executable()
+    if codex_exe is None:
+        return None, codex_not_found_message()
 
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
             output_file = tmp.name
 
         cmd = [
-            "codex",
+            codex_exe,
             "exec",
             "--skip-git-repo-check",
             "--color",
@@ -138,6 +146,7 @@ def load_auth_state():
         "token_preview": None,
         "error": None,
         "auth_path": str(LOCAL_AUTH_FILE),
+        "codex_cli_path": resolve_codex_executable() or "not found",
     }
     if not LOCAL_AUTH_FILE.exists():
         return state
@@ -170,7 +179,42 @@ def codex_env():
     LOCAL_CODEX_HOME.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["CODEX_HOME"] = str(LOCAL_CODEX_HOME)
+    path_items = env.get("PATH", "").split(os.pathsep) if env.get("PATH") else []
+    npm_dir = str(Path.home() / "AppData" / "Roaming" / "npm")
+    if npm_dir not in path_items:
+        path_items.insert(0, npm_dir)
+        env["PATH"] = os.pathsep.join(path_items)
     return env
+
+
+def resolve_codex_executable():
+    env_override = (os.getenv("CODEX_CLI_PATH") or "").strip()
+    if env_override and Path(env_override).exists():
+        return env_override
+
+    for name in ["codex.cmd", "codex", "codex.ps1"]:
+        found = shutil.which(name)
+        if found:
+            return found
+
+    candidates = [
+        Path.home() / "AppData" / "Roaming" / "npm" / "codex.cmd",
+        Path.home() / "AppData" / "Roaming" / "npm" / "codex.ps1",
+        BASE_DIR / "node_modules" / ".bin" / "codex.cmd",
+        BASE_DIR / "node_modules" / ".bin" / "codex",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def codex_not_found_message():
+    return (
+        "Codex CLI not found.\n"
+        "Set CODEX_CLI_PATH to your codex executable or install globally with npm.\n"
+        "Common path on Windows: C:\\Users\\<you>\\AppData\\Roaming\\npm\\codex.cmd"
+    )
 
 
 if __name__ == "__main__":
