@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Django
+db.sqlite3
+staticfiles/
+
+# Virtual environments
+env/
+venv/
+env1/
+.venv/
+
+# Local Codex credentials and temp files
+.codex/
+codex_last_message.txt
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
