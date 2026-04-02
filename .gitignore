@@ -12,10 +12,12 @@ env/
 venv/
 env1/
 .venv/
+ENV/
 
 # Local Codex credentials and temp files
 .codex/
 codex_last_message.txt
+_tmp_openai_codex_src/
 
 # OS/editor
 .DS_Store
