@@ -1,9 +1,11 @@
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
 import tempfile
+from functools import lru_cache
 from pathlib import Path
 
 from django.conf import settings
@@ -12,22 +14,33 @@ from django.shortcuts import render
 DEFAULT_MODEL = "gpt-5.3-codex"
 DEFAULT_EXEC_TIMEOUT_SECONDS = 600
 DEFAULT_LOGIN_TIMEOUT_SECONDS = 300
+DEFAULT_REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"]
 
 
 def index(request):
     form = build_form_state(request)
+    model_catalog = get_model_catalog()
+    selected_model = get_effective_model(form)
+    selected_model_info = find_model_info(model_catalog, selected_model)
+    reasoning_effort_options = get_reasoning_effort_options(selected_model_info)
+
     response_text = None
     error_message = None
     info_message = None
     command_output = None
-    cli_help = None
+    cli_help = {"root": "", "exec": "", "login": "", "error": None}
+    exec_metrics = None
 
     if request.method == "POST":
         action = (request.POST.get("action") or "").strip().lower()
         if action == "exec":
-            ok, response_text, error_message, command_output = run_exec(form)
+            ok, response_text, error_message, command_output, exec_metrics = run_exec(
+                form, model_catalog
+            )
             if ok and not response_text:
-                info_message = "Command completed but no final message file content was returned."
+                info_message = (
+                    "Command completed but no final message file content was returned."
+                )
         elif action == "login":
             ok, info_message, error_message, command_output = run_login(form)
         elif action == "status":
@@ -42,8 +55,6 @@ def index(request):
             error_message = "Unknown action."
 
     auth_state = load_auth_state()
-    if cli_help is None:
-        cli_help = {"root": "", "exec": "", "login": "", "error": None}
 
     context = {
         "form": form,
@@ -53,28 +64,33 @@ def index(request):
         "command_output": command_output,
         "auth_state": auth_state,
         "cli_help": cli_help,
+        "model_catalog": model_catalog,
+        "selected_model": selected_model,
+        "selected_model_info": selected_model_info,
+        "reasoning_effort_options": reasoning_effort_options,
+        "exec_metrics": exec_metrics,
     }
     return render(request, "codexui/index.html", context)
 
 
-def run_exec(form):
+def run_exec(form, model_catalog):
     codex_exe = resolve_codex_executable()
     if not codex_exe:
-        return False, None, codex_not_found_message(), None
+        return False, None, codex_not_found_message(), None, None
 
     prompt = form["prompt"].strip()
     if not prompt:
-        return False, None, "Message is required for `codex exec`.", None
+        return False, None, "Message is required for `codex exec`.", None, None
 
     timeout_seconds, timeout_error = parse_timeout(
         form["exec_timeout_seconds"], DEFAULT_EXEC_TIMEOUT_SECONDS
     )
     if timeout_error:
-        return False, None, timeout_error, None
+        return False, None, timeout_error, None, None
 
     extra_args, extra_error = parse_extra_args(form["extra_exec_args"])
     if extra_error:
-        return False, None, extra_error, None
+        return False, None, extra_error, None, None
 
     output_file = form["output_last_message_file"].strip()
     output_is_temp = False
@@ -84,11 +100,18 @@ def run_exec(form):
         output_file = temp.name
         output_is_temp = True
 
+    selected_model = get_effective_model(form)
+
     cmd = [codex_exe, "exec"]
-    cmd.extend(build_common_options(form["exec_config_overrides"], form["exec_enable"], form["exec_disable"]))
+    cmd.extend(
+        build_common_options(
+            form["exec_config_overrides"], form["exec_enable"], form["exec_disable"]
+        )
+    )
+    cmd.extend(build_reasoning_options(form))
     cmd.extend(add_repeat_option("--image", split_lines(form["images"])))
-    if form["model"].strip():
-        cmd.extend(["-m", form["model"].strip()])
+    if selected_model:
+        cmd.extend(["-m", selected_model])
     if form["oss"]:
         cmd.append("--oss")
     if form["local_provider"]:
@@ -117,15 +140,29 @@ def run_exec(form):
     cmd.append(prompt)
 
     result = run_codex_command(cmd, timeout_seconds=timeout_seconds)
+    exec_metrics = build_exec_metrics(result, selected_model, model_catalog, form)
+
     if result["error"]:
-        return False, None, result["error"], result["output"]
+        return False, None, result["error"], result["output"], exec_metrics
     if result["returncode"] != 0:
-        return False, None, f"Codex exec failed.\n{result['output'] or 'No output'}", result["output"]
+        return (
+            False,
+            None,
+            f"Codex exec failed.\n{result['output'] or 'No output'}",
+            result["output"],
+            exec_metrics,
+        )
 
     try:
         response_text = Path(output_file).read_text(encoding="utf-8").strip()
     except OSError as exc:
-        return False, None, f"Command succeeded but output file read failed: {exc}", result["output"]
+        return (
+            False,
+            None,
+            f"Command succeeded but output file read failed: {exc}",
+            result["output"],
+            exec_metrics,
+        )
     finally:
         if output_is_temp:
             try:
@@ -133,7 +170,7 @@ def run_exec(form):
             except OSError:
                 pass
 
-    return True, response_text, None, result["output"]
+    return True, response_text, None, result["output"], exec_metrics
 
 
 def run_login(form):
@@ -152,7 +189,11 @@ def run_login(form):
         return False, None, extra_error, None
 
     cmd = [codex_exe, "login"]
-    cmd.extend(build_common_options(form["login_config_overrides"], form["login_enable"], form["login_disable"]))
+    cmd.extend(
+        build_common_options(
+            form["login_config_overrides"], form["login_enable"], form["login_disable"]
+        )
+    )
     if form["device_auth"]:
         cmd.append("--device-auth")
     stdin_text = None
@@ -165,7 +206,12 @@ def run_login(form):
     if result["error"]:
         return False, None, result["error"], result["output"]
     if result["returncode"] != 0:
-        return False, None, f"Codex login failed.\n{result['output'] or 'No output'}", result["output"]
+        return (
+            False,
+            None,
+            f"Codex login failed.\n{result['output'] or 'No output'}",
+            result["output"],
+        )
     return True, "Login command finished.", None, result["output"]
 
 
@@ -180,11 +226,18 @@ def run_login_status(form):
     if timeout_error:
         return False, None, timeout_error, None
 
-    result = run_codex_command([codex_exe, "login", "status"], timeout_seconds=timeout_seconds)
+    result = run_codex_command(
+        [codex_exe, "login", "status"], timeout_seconds=timeout_seconds
+    )
     if result["error"]:
         return False, None, result["error"], result["output"]
     if result["returncode"] != 0:
-        return False, None, f"Codex login status failed.\n{result['output'] or 'No output'}", result["output"]
+        return (
+            False,
+            None,
+            f"Codex login status failed.\n{result['output'] or 'No output'}",
+            result["output"],
+        )
     return True, result["output"] or "No status output.", None, result["output"]
 
 
@@ -200,8 +253,12 @@ def fetch_codex_help(form):
         return {"root": "", "exec": "", "login": "", "error": timeout_error}
 
     root = run_codex_command([codex_exe, "--help"], timeout_seconds=timeout_seconds)
-    exec_help = run_codex_command([codex_exe, "exec", "--help"], timeout_seconds=timeout_seconds)
-    login_help = run_codex_command([codex_exe, "login", "--help"], timeout_seconds=timeout_seconds)
+    exec_help = run_codex_command(
+        [codex_exe, "exec", "--help"], timeout_seconds=timeout_seconds
+    )
+    login_help = run_codex_command(
+        [codex_exe, "login", "--help"], timeout_seconds=timeout_seconds
+    )
     error = None
     if root["error"] or exec_help["error"] or login_help["error"]:
         error = root["error"] or exec_help["error"] or login_help["error"]
@@ -226,22 +283,54 @@ def run_codex_command(cmd, timeout_seconds, stdin_text=None):
             env=codex_env(),
         )
     except FileNotFoundError:
-        return {"returncode": -1, "output": "", "error": codex_not_found_message()}
+        return {
+            "returncode": -1,
+            "output": "",
+            "stdout": "",
+            "stderr": "",
+            "error": codex_not_found_message(),
+        }
     except subprocess.TimeoutExpired:
-        return {"returncode": -1, "output": "", "error": f"Command timed out after {timeout_seconds} seconds."}
+        return {
+            "returncode": -1,
+            "output": "",
+            "stdout": "",
+            "stderr": "",
+            "error": f"Command timed out after {timeout_seconds} seconds.",
+        }
     except OSError as exc:
-        return {"returncode": -1, "output": "", "error": f"Failed to execute command: {exc}"}
+        return {
+            "returncode": -1,
+            "output": "",
+            "stdout": "",
+            "stderr": "",
+            "error": f"Failed to execute command: {exc}",
+        }
 
-    output = "\n".join(part for part in [(proc.stdout or "").strip(), (proc.stderr or "").strip()] if part)
-    return {"returncode": proc.returncode, "output": output, "error": None}
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
+    output = "\n".join(part for part in [stdout.strip(), stderr.strip()] if part)
+    return {
+        "returncode": proc.returncode,
+        "output": output,
+        "stdout": stdout,
+        "stderr": stderr,
+        "error": None,
+    }
 
 
 def build_form_state(request):
     post = request.POST if request.method == "POST" else None
     return {
-        "model": get_value(post, "model", DEFAULT_MODEL),
+        "model_select": get_value(post, "model_select", DEFAULT_MODEL),
+        "model": get_value(post, "model", ""),
         "prompt": get_value(post, "prompt", ""),
-        "exec_timeout_seconds": get_value(post, "exec_timeout_seconds", str(DEFAULT_EXEC_TIMEOUT_SECONDS)),
+        "reasoning_effort": get_value(post, "reasoning_effort", ""),
+        "reasoning_summary": get_value(post, "reasoning_summary", ""),
+        "model_verbosity": get_value(post, "model_verbosity", ""),
+        "exec_timeout_seconds": get_value(
+            post, "exec_timeout_seconds", str(DEFAULT_EXEC_TIMEOUT_SECONDS)
+        ),
         "exec_config_overrides": get_value(post, "exec_config_overrides", ""),
         "exec_enable": get_value(post, "exec_enable", ""),
         "exec_disable": get_value(post, "exec_disable", ""),
@@ -257,17 +346,21 @@ def build_form_state(request):
         "add_dirs": get_value(post, "add_dirs", ""),
         "output_schema": get_value(post, "output_schema", ""),
         "color": get_value(post, "color", "auto"),
-        "json_output": get_bool(post, "json_output", False),
+        "json_output": get_bool(post, "json_output", True),
         "output_last_message_file": get_value(post, "output_last_message_file", ""),
         "extra_exec_args": get_value(post, "extra_exec_args", ""),
-        "login_timeout_seconds": get_value(post, "login_timeout_seconds", str(DEFAULT_LOGIN_TIMEOUT_SECONDS)),
+        "login_timeout_seconds": get_value(
+            post, "login_timeout_seconds", str(DEFAULT_LOGIN_TIMEOUT_SECONDS)
+        ),
         "login_config_overrides": get_value(post, "login_config_overrides", ""),
         "login_enable": get_value(post, "login_enable", ""),
         "login_disable": get_value(post, "login_disable", ""),
         "device_auth": get_bool(post, "device_auth", False),
         "login_api_key": get_value(post, "login_api_key", ""),
         "extra_login_args": get_value(post, "extra_login_args", ""),
-        "help_timeout_seconds": get_value(post, "help_timeout_seconds", str(DEFAULT_LOGIN_TIMEOUT_SECONDS)),
+        "help_timeout_seconds": get_value(
+            post, "help_timeout_seconds", str(DEFAULT_LOGIN_TIMEOUT_SECONDS)
+        ),
     }
 
 
@@ -335,6 +428,273 @@ def build_common_options(config_text, enable_text, disable_text):
     args.extend(add_repeat_option("--enable", split_csv(enable_text)))
     args.extend(add_repeat_option("--disable", split_csv(disable_text)))
     return args
+
+
+def build_reasoning_options(form):
+    args = []
+    if form["reasoning_effort"]:
+        args.extend(["-c", f"model_reasoning_effort={toml_string(form['reasoning_effort'])}"])
+    if form["reasoning_summary"]:
+        args.extend(
+            ["-c", f"model_reasoning_summary={toml_string(form['reasoning_summary'])}"]
+        )
+    if form["model_verbosity"]:
+        args.extend(["-c", f"model_verbosity={toml_string(form['model_verbosity'])}"])
+    return args
+
+
+def toml_string(value):
+    return json.dumps(str(value))
+
+
+def get_effective_model(form):
+    custom = (form.get("model") or "").strip()
+    if custom:
+        return custom
+    return (form.get("model_select") or "").strip() or DEFAULT_MODEL
+
+
+def build_exec_metrics(result, selected_model, model_catalog, form):
+    usage, usage_source, event_types = extract_usage_from_output(
+        result.get("stdout", ""), result.get("output", "")
+    )
+    rate_limits = extract_rate_limits(result.get("stdout", ""), result.get("output", ""))
+    model_info = find_model_info(model_catalog, selected_model)
+
+    context_window = model_info.get("context_window") if model_info else None
+    total_tokens = None
+    if usage:
+        total_tokens = usage.get("total_tokens")
+        if total_tokens is None:
+            input_tokens = usage.get("input_tokens") or 0
+            output_tokens = usage.get("output_tokens") or 0
+            try:
+                total_tokens = int(input_tokens) + int(output_tokens)
+            except (TypeError, ValueError):
+                total_tokens = None
+
+    context_remaining = None
+    if context_window is not None and total_tokens is not None:
+        context_remaining = max(int(context_window) - int(total_tokens), 0)
+
+    return {
+        "model": selected_model,
+        "context_window": context_window,
+        "context_remaining": context_remaining,
+        "usage": usage,
+        "usage_source": usage_source,
+        "usage_pretty": pretty_json(usage),
+        "rate_limits": rate_limits,
+        "rate_limits_pretty": pretty_json(rate_limits),
+        "reasoning_effort": form["reasoning_effort"] or "default",
+        "reasoning_summary": form["reasoning_summary"] or "default",
+        "model_verbosity": form["model_verbosity"] or "default",
+        "event_types": event_types,
+    }
+
+
+def extract_usage_from_output(stdout_text, combined_output):
+    usage = None
+    event_types = []
+    for line in stdout_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict):
+            continue
+        event_type = item.get("type")
+        if event_type:
+            event_types.append(str(event_type))
+        if event_type == "turn.completed" and isinstance(item.get("usage"), dict):
+            usage = item.get("usage")
+
+    if usage:
+        return usage, "json", event_types
+
+    match = re.search(r"tokens used\s*[\r\n]+([0-9][0-9,]*)", combined_output, re.IGNORECASE)
+    if match:
+        total_tokens = int(match.group(1).replace(",", ""))
+        return {"total_tokens": total_tokens}, "text", event_types
+    return None, "unavailable", event_types
+
+
+def extract_rate_limits(stdout_text, combined_output):
+    rate_limits = {}
+    for line in stdout_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        collect_rate_limit_fields(item, rate_limits)
+
+    header_keys = [
+        "x-ratelimit-limit-requests",
+        "x-ratelimit-remaining-requests",
+        "x-ratelimit-reset-requests",
+        "x-ratelimit-limit-tokens",
+        "x-ratelimit-remaining-tokens",
+        "x-ratelimit-reset-tokens",
+    ]
+    for key in header_keys:
+        pattern = rf"(?im)^\s*{re.escape(key)}\s*[:=]\s*(.+)$"
+        match = re.search(pattern, combined_output)
+        if match:
+            rate_limits[key] = match.group(1).strip()
+
+    return rate_limits
+
+
+def collect_rate_limit_fields(value, out):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            lower_key = str(key).lower()
+            if lower_key.startswith("x-ratelimit") or (
+                "rate" in lower_key and ("limit" in lower_key or "remaining" in lower_key)
+            ):
+                out[str(key)] = item
+            collect_rate_limit_fields(item, out)
+    elif isinstance(value, list):
+        for item in value:
+            collect_rate_limit_fields(item, out)
+
+
+def pretty_json(value):
+    if value is None:
+        return ""
+    try:
+        return json.dumps(value, indent=2, ensure_ascii=False)
+    except TypeError:
+        return str(value)
+
+
+@lru_cache(maxsize=1)
+def get_model_catalog():
+    candidates = [
+        local_codex_home() / "models_cache.json",
+        local_codex_home() / "models.json",
+        Path(settings.BASE_DIR) / "_tmp_openai_codex_src" / "codex-rs" / "core" / "models.json",
+    ]
+    raw_models = []
+    for path in candidates:
+        models = load_models_file(path)
+        if models:
+            raw_models = models
+            break
+    if not raw_models:
+        return fallback_model_catalog()
+
+    catalog = []
+    for model in raw_models:
+        if not isinstance(model, dict):
+            continue
+        slug = (model.get("slug") or "").strip()
+        if not slug:
+            continue
+        visibility = model.get("visibility")
+        if visibility and str(visibility).lower() == "hidden":
+            continue
+
+        supported = []
+        for level in model.get("supported_reasoning_levels") or []:
+            if isinstance(level, dict) and level.get("effort"):
+                supported.append(str(level["effort"]))
+            elif isinstance(level, str):
+                supported.append(level)
+        catalog.append(
+            {
+                "slug": slug,
+                "display_name": model.get("display_name") or slug,
+                "description": model.get("description") or "",
+                "context_window": model.get("context_window"),
+                "default_reasoning_level": model.get("default_reasoning_level") or "",
+                "supported_reasoning_levels": supported,
+                "priority": model.get("priority", 9999),
+            }
+        )
+
+    if not catalog:
+        return fallback_model_catalog()
+
+    catalog.sort(key=lambda item: (item["priority"], str(item["display_name"]).lower()))
+    return catalog
+
+
+def load_models_file(path):
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    if isinstance(data, dict):
+        models = data.get("models")
+        if isinstance(models, list):
+            return models
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def fallback_model_catalog():
+    return [
+        {
+            "slug": "gpt-5.4",
+            "display_name": "gpt-5.4",
+            "description": "Latest frontier agentic coding model.",
+            "context_window": 272000,
+            "default_reasoning_level": "medium",
+            "supported_reasoning_levels": DEFAULT_REASONING_EFFORTS,
+            "priority": 1,
+        },
+        {
+            "slug": "gpt-5.4-mini",
+            "display_name": "GPT-5.4-Mini",
+            "description": "Smaller frontier agentic coding model.",
+            "context_window": 272000,
+            "default_reasoning_level": "medium",
+            "supported_reasoning_levels": DEFAULT_REASONING_EFFORTS,
+            "priority": 2,
+        },
+        {
+            "slug": "gpt-5.3-codex",
+            "display_name": "gpt-5.3-codex",
+            "description": "Codex optimized model.",
+            "context_window": 272000,
+            "default_reasoning_level": "medium",
+            "supported_reasoning_levels": DEFAULT_REASONING_EFFORTS,
+            "priority": 3,
+        },
+        {
+            "slug": "gpt-5.2",
+            "display_name": "gpt-5.2",
+            "description": "Balanced professional model.",
+            "context_window": 272000,
+            "default_reasoning_level": "medium",
+            "supported_reasoning_levels": DEFAULT_REASONING_EFFORTS,
+            "priority": 4,
+        },
+    ]
+
+
+def find_model_info(model_catalog, model_slug):
+    for item in model_catalog:
+        if item["slug"] == model_slug:
+            return item
+    return None
+
+
+def get_reasoning_effort_options(model_info):
+    if model_info and model_info.get("supported_reasoning_levels"):
+        return model_info["supported_reasoning_levels"]
+    return DEFAULT_REASONING_EFFORTS
 
 
 def load_auth_state():

@@ -144,6 +144,7 @@
         .msg { margin: 14px 0 0; font-weight: 600; }
         .msg.ok { color: var(--ok); }
         .msg.err { color: var(--err); }
+        .kv p { margin: 6px 0; }
     </style>
 </head>
 <body>
@@ -166,6 +167,10 @@
                 <p>Auth file: <code>{{ auth_state.auth_path }}</code></p>
                 <p>CODEX_HOME: <code>{{ auth_state.codex_home }}</code></p>
                 <p>Codex CLI: <code>{{ auth_state.codex_cli_path }}</code></p>
+                <p>Selected model: <code>{{ selected_model }}</code></p>
+                <p>Context window:
+                    <code>{% if selected_model_info and selected_model_info.context_window %}{{ selected_model_info.context_window }}{% else %}unknown{% endif %}</code>
+                </p>
                 {% if auth_state.error %}
                 <p class="msg err">{{ auth_state.error }}</p>
                 {% endif %}
@@ -227,8 +232,46 @@
                 <input type="hidden" name="action" value="exec">
                 <div class="form-grid">
                     <div class="field half">
-                        <label for="model">Model (`-m`)</label>
-                        <input id="model" type="text" name="model" value="{{ form.model }}">
+                        <label for="model_select">Model (`-m`)</label>
+                        <select id="model_select" name="model_select">
+                            {% for item in model_catalog %}
+                            <option value="{{ item.slug }}" {% if form.model_select == item.slug %}selected{% endif %}>
+                                {{ item.display_name }} ({{ item.slug }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field half">
+                        <label for="model">Custom model override (optional)</label>
+                        <input id="model" type="text" name="model" value="{{ form.model }}" placeholder="If set, overrides dropdown model">
+                    </div>
+                    <div class="field third">
+                        <label for="reasoning_effort">Reasoning effort</label>
+                        <select id="reasoning_effort" name="reasoning_effort">
+                            <option value="" {% if form.reasoning_effort == "" %}selected{% endif %}>default</option>
+                            {% for effort in reasoning_effort_options %}
+                            <option value="{{ effort }}" {% if form.reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field third">
+                        <label for="reasoning_summary">Reasoning summary</label>
+                        <select id="reasoning_summary" name="reasoning_summary">
+                            <option value="" {% if form.reasoning_summary == "" %}selected{% endif %}>default</option>
+                            <option value="none" {% if form.reasoning_summary == "none" %}selected{% endif %}>none</option>
+                            <option value="auto" {% if form.reasoning_summary == "auto" %}selected{% endif %}>auto</option>
+                            <option value="concise" {% if form.reasoning_summary == "concise" %}selected{% endif %}>concise</option>
+                            <option value="detailed" {% if form.reasoning_summary == "detailed" %}selected{% endif %}>detailed</option>
+                        </select>
+                    </div>
+                    <div class="field third">
+                        <label for="model_verbosity">Verbosity</label>
+                        <select id="model_verbosity" name="model_verbosity">
+                            <option value="" {% if form.model_verbosity == "" %}selected{% endif %}>default</option>
+                            <option value="low" {% if form.model_verbosity == "low" %}selected{% endif %}>low</option>
+                            <option value="medium" {% if form.model_verbosity == "medium" %}selected{% endif %}>medium</option>
+                            <option value="high" {% if form.model_verbosity == "high" %}selected{% endif %}>high</option>
+                        </select>
                     </div>
                     <div class="field third">
                         <label for="exec_timeout_seconds">Timeout (seconds)</label>
@@ -322,6 +365,38 @@
                 the extra args inputs for anything new/rare.
             </p>
         </section>
+
+        {% if exec_metrics %}
+        <section class="card" style="margin-top:16px;">
+            <h2>Execution Insights</h2>
+            <div class="kv">
+                <p>Model: <code>{{ exec_metrics.model }}</code></p>
+                <p>Reasoning effort: <code>{{ exec_metrics.reasoning_effort }}</code></p>
+                <p>Reasoning summary: <code>{{ exec_metrics.reasoning_summary }}</code></p>
+                <p>Verbosity: <code>{{ exec_metrics.model_verbosity }}</code></p>
+                <p>Usage source: <code>{{ exec_metrics.usage_source }}</code></p>
+                <p>Context window:
+                    <code>{% if exec_metrics.context_window %}{{ exec_metrics.context_window }}{% else %}unknown{% endif %}</code>
+                </p>
+                <p>Estimated context remaining:
+                    <code>{% if exec_metrics.context_remaining != None %}{{ exec_metrics.context_remaining }}{% else %}unknown{% endif %}</code>
+                </p>
+            </div>
+            {% if exec_metrics.usage_pretty %}
+            <h3>Token Usage</h3>
+            <pre>{{ exec_metrics.usage_pretty }}</pre>
+            {% else %}
+            <p class="note">Token usage details were not returned by this run.</p>
+            {% endif %}
+
+            {% if exec_metrics.rate_limits_pretty %}
+            <h3>Rate Limit Details</h3>
+            <pre>{{ exec_metrics.rate_limits_pretty }}</pre>
+            {% else %}
+            <p class="note">Rate-limit remaining values were not exposed by Codex CLI output for this run.</p>
+            {% endif %}
+        </section>
+        {% endif %}
 
         <section class="card" style="margin-top:16px;">
             <h2>CLI Help</h2>

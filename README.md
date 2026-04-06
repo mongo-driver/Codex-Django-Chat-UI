@@ -15,6 +15,12 @@ No `sk-` key is required for ChatGPT login mode.
 - Login status check via `codex login status`
 - Prompt execution via `codex exec`
 - Local auth state viewer (`auth_mode`, account id, token preview, resolved Codex CLI path)
+- Model chooser from local Codex model metadata (with custom model override)
+- Reasoning controls (`model_reasoning_effort`, `model_reasoning_summary`, `model_verbosity`)
+- Execution insights panel with:
+  - token usage (from JSON events when available)
+  - selected model context window and estimated remaining context
+  - rate-limit fields when exposed by Codex CLI output
 - Advanced option controls for Codex:
   - `exec`: `-c`, `--enable`, `--disable`, `--image`, `-m`, `--oss`, `--local-provider`, `--sandbox`, `--profile`, `--full-auto`, `--dangerously-bypass-approvals-and-sandbox`, `--cd`, `--skip-git-repo-check`, `--add-dir`, `--output-schema`, `--color`, `--json`, `-o`
   - `login`: `-c`, `--enable`, `--disable`, `--device-auth`, `--with-api-key`
