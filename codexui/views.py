@@ -5,6 +5,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import uuid
 from functools import lru_cache
 from pathlib import Path
 
@@ -15,28 +16,91 @@ DEFAULT_MODEL = "gpt-5.3-codex"
 DEFAULT_EXEC_TIMEOUT_SECONDS = 600
 DEFAULT_LOGIN_TIMEOUT_SECONDS = 300
 DEFAULT_REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"]
+SESSION_CHATS_KEY = "codexui_chats"
+SESSION_ACTIVE_CHAT_KEY = "codexui_active_chat"
+SESSION_THEME_KEY = "codexui_theme"
+MAX_CHAT_MESSAGES = 60
 
 
 def index(request):
-    form = build_form_state(request)
-    model_catalog = get_model_catalog()
-    selected_model = get_effective_model(form)
-    selected_model_info = find_model_info(model_catalog, selected_model)
-    reasoning_effort_options = get_reasoning_effort_options(selected_model_info)
+    chats, active_chat = ensure_chat_state(request)
+    theme = get_theme(request)
+    post = request.POST if request.method == "POST" else None
+    action = (post.get("action") or "").strip().lower() if post else ""
 
+    info_message = None
     response_text = None
     error_message = None
-    info_message = None
     command_output = None
     cli_help = {"root": "", "exec": "", "login": "", "error": None}
     exec_metrics = None
 
     if request.method == "POST":
-        action = (request.POST.get("action") or "").strip().lower()
+        if action == "set_theme":
+            theme_value = (post.get("theme") or "").strip().lower()
+            if theme_value in {"dark", "light"}:
+                set_theme(request, theme_value)
+                theme = get_theme(request)
+        elif action == "new_chat":
+            new_title = (post.get("new_chat_title") or "").strip()
+            new_chat = new_chat_state(new_title, len(chats) + 1)
+            chats.insert(0, new_chat)
+            save_chat_state(request, chats, new_chat["id"])
+            chats, active_chat = ensure_chat_state(request)
+            info_message = f"Created {new_chat['title']}."
+        elif action == "switch_chat":
+            target_chat_id = (post.get("chat_id") or "").strip()
+            if set_active_chat(request, chats, target_chat_id):
+                chats, active_chat = ensure_chat_state(request)
+            else:
+                error_message = "Chat not found."
+        elif action == "delete_chat":
+            target_chat_id = (post.get("chat_id") or active_chat["id"]).strip()
+            if len(chats) <= 1:
+                error_message = "At least one chat must remain."
+            else:
+                next_chats = [item for item in chats if item["id"] != target_chat_id]
+                if not next_chats:
+                    error_message = "Unable to delete the last chat."
+                else:
+                    save_chat_state(request, next_chats, next_chats[0]["id"])
+                    chats, active_chat = ensure_chat_state(request)
+                    info_message = "Chat deleted."
+        elif action == "clear_chat":
+            active_chat["thread_id"] = ""
+            active_chat["messages"] = []
+            active_chat["last_exec_metrics"] = None
+            active_chat["settings"] = default_form_state()
+            save_chat_state(request, chats, active_chat["id"])
+            info_message = "Active chat context was cleared."
+
+    chats, active_chat = ensure_chat_state(request)
+    seeded_form = (
+        active_chat.get("settings")
+        if isinstance(active_chat.get("settings"), dict)
+        else default_form_state()
+    )
+    form = build_form_state(
+        post if action in {"exec", "login", "status", "help"} else None, seeded_form
+    )
+
+    model_catalog = get_model_catalog()
+    selected_model = get_effective_model(form)
+    selected_model_info = find_model_info(model_catalog, selected_model)
+    reasoning_effort_options = get_reasoning_effort_options(selected_model_info)
+
+    if request.method == "POST":
         if action == "exec":
             ok, response_text, error_message, command_output, exec_metrics = run_exec(
-                form, model_catalog
+                form, model_catalog, active_chat
             )
+            active_chat["settings"] = form
+            active_chat["last_exec_metrics"] = exec_metrics
+            if ok:
+                append_chat_message(active_chat, "user", form["prompt"])
+                if response_text:
+                    append_chat_message(active_chat, "assistant", response_text)
+            save_chat_state(request, chats, active_chat["id"])
             if ok and not response_text:
                 info_message = (
                     "Command completed but no final message file content was returned."
@@ -51,10 +115,23 @@ def index(request):
                 error_message = cli_help["error"]
             else:
                 info_message = "Codex CLI help refreshed."
-        else:
+        elif action not in {
+            "set_theme",
+            "new_chat",
+            "switch_chat",
+            "delete_chat",
+            "clear_chat",
+        }:
             error_message = "Unknown action."
 
+    chats, active_chat = ensure_chat_state(request)
+    if exec_metrics is None and isinstance(active_chat.get("last_exec_metrics"), dict):
+        exec_metrics = active_chat["last_exec_metrics"]
+
     auth_state = load_auth_state()
+    show_advanced = bool(error_message) or action in {"login", "status", "help"} or (
+        action == "exec" and form_has_advanced_overrides(form)
+    )
 
     context = {
         "form": form,
@@ -69,11 +146,17 @@ def index(request):
         "selected_model_info": selected_model_info,
         "reasoning_effort_options": reasoning_effort_options,
         "exec_metrics": exec_metrics,
+        "theme": theme,
+        "theme_toggle_target": "light" if theme == "dark" else "dark",
+        "theme_toggle_label": "Disable dark theme" if theme == "dark" else "Enable dark theme",
+        "chats": chats,
+        "active_chat": active_chat,
+        "show_advanced": show_advanced,
     }
     return render(request, "codexui/index.html", context)
 
 
-def run_exec(form, model_catalog):
+def run_exec(form, model_catalog, active_chat):
     codex_exe = resolve_codex_executable()
     if not codex_exe:
         return False, None, codex_not_found_message(), None, None
@@ -101,8 +184,11 @@ def run_exec(form, model_catalog):
         output_is_temp = True
 
     selected_model = get_effective_model(form)
+    resume_thread_id = (active_chat.get("thread_id") or "").strip() if active_chat else ""
 
     cmd = [codex_exe, "exec"]
+    if resume_thread_id:
+        cmd.extend(["resume", resume_thread_id])
     cmd.extend(
         build_common_options(
             form["exec_config_overrides"], form["exec_enable"], form["exec_disable"]
@@ -140,7 +226,18 @@ def run_exec(form, model_catalog):
     cmd.append(prompt)
 
     result = run_codex_command(cmd, timeout_seconds=timeout_seconds)
-    exec_metrics = build_exec_metrics(result, selected_model, model_catalog, form)
+    detected_thread_id = (
+        extract_thread_id(result.get("stdout", ""), result.get("output", ""))
+        or resume_thread_id
+    )
+    exec_metrics = build_exec_metrics(
+        result,
+        selected_model,
+        model_catalog,
+        form,
+        detected_thread_id,
+        bool(resume_thread_id),
+    )
 
     if result["error"]:
         return False, None, result["error"], result["output"], exec_metrics
@@ -169,6 +266,9 @@ def run_exec(form, model_catalog):
                 Path(output_file).unlink(missing_ok=True)
             except OSError:
                 pass
+
+    if active_chat is not None:
+        active_chat["thread_id"] = detected_thread_id or ""
 
     return True, response_text, None, result["output"], exec_metrics
 
@@ -319,47 +419,100 @@ def run_codex_command(cmd, timeout_seconds, stdin_text=None):
     }
 
 
-def build_form_state(request):
-    post = request.POST if request.method == "POST" else None
+def default_form_state(seed=None):
+    defaults = {
+        "model_select": DEFAULT_MODEL,
+        "model": "",
+        "prompt": "",
+        "reasoning_effort": "",
+        "reasoning_summary": "",
+        "model_verbosity": "",
+        "exec_timeout_seconds": str(DEFAULT_EXEC_TIMEOUT_SECONDS),
+        "exec_config_overrides": "",
+        "exec_enable": "",
+        "exec_disable": "",
+        "images": "",
+        "oss": False,
+        "local_provider": "",
+        "sandbox_mode": "",
+        "profile": "",
+        "full_auto": False,
+        "dangerous_bypass": False,
+        "cd_dir": "",
+        "skip_git_repo_check": True,
+        "add_dirs": "",
+        "output_schema": "",
+        "color": "auto",
+        "json_output": True,
+        "output_last_message_file": "",
+        "extra_exec_args": "",
+        "login_timeout_seconds": str(DEFAULT_LOGIN_TIMEOUT_SECONDS),
+        "login_config_overrides": "",
+        "login_enable": "",
+        "login_disable": "",
+        "device_auth": False,
+        "login_api_key": "",
+        "extra_login_args": "",
+        "help_timeout_seconds": str(DEFAULT_LOGIN_TIMEOUT_SECONDS),
+    }
+    if isinstance(seed, dict):
+        for key, value in seed.items():
+            if key in defaults and value is not None:
+                defaults[key] = value
+    return defaults
+
+
+def build_form_state(post=None, seed=None):
+    defaults = default_form_state(seed)
     return {
-        "model_select": get_value(post, "model_select", DEFAULT_MODEL),
-        "model": get_value(post, "model", ""),
-        "prompt": get_value(post, "prompt", ""),
-        "reasoning_effort": get_value(post, "reasoning_effort", ""),
-        "reasoning_summary": get_value(post, "reasoning_summary", ""),
-        "model_verbosity": get_value(post, "model_verbosity", ""),
+        "model_select": get_value(post, "model_select", defaults["model_select"]),
+        "model": get_value(post, "model", defaults["model"]),
+        "prompt": get_value(post, "prompt", defaults["prompt"]),
+        "reasoning_effort": get_value(post, "reasoning_effort", defaults["reasoning_effort"]),
+        "reasoning_summary": get_value(post, "reasoning_summary", defaults["reasoning_summary"]),
+        "model_verbosity": get_value(post, "model_verbosity", defaults["model_verbosity"]),
         "exec_timeout_seconds": get_value(
-            post, "exec_timeout_seconds", str(DEFAULT_EXEC_TIMEOUT_SECONDS)
+            post, "exec_timeout_seconds", defaults["exec_timeout_seconds"]
         ),
-        "exec_config_overrides": get_value(post, "exec_config_overrides", ""),
-        "exec_enable": get_value(post, "exec_enable", ""),
-        "exec_disable": get_value(post, "exec_disable", ""),
-        "images": get_value(post, "images", ""),
-        "oss": get_bool(post, "oss", False),
-        "local_provider": get_value(post, "local_provider", ""),
-        "sandbox_mode": get_value(post, "sandbox_mode", ""),
-        "profile": get_value(post, "profile", ""),
-        "full_auto": get_bool(post, "full_auto", False),
-        "dangerous_bypass": get_bool(post, "dangerous_bypass", False),
-        "cd_dir": get_value(post, "cd_dir", ""),
-        "skip_git_repo_check": get_bool(post, "skip_git_repo_check", True),
-        "add_dirs": get_value(post, "add_dirs", ""),
-        "output_schema": get_value(post, "output_schema", ""),
-        "color": get_value(post, "color", "auto"),
-        "json_output": get_bool(post, "json_output", True),
-        "output_last_message_file": get_value(post, "output_last_message_file", ""),
-        "extra_exec_args": get_value(post, "extra_exec_args", ""),
+        "exec_config_overrides": get_value(
+            post, "exec_config_overrides", defaults["exec_config_overrides"]
+        ),
+        "exec_enable": get_value(post, "exec_enable", defaults["exec_enable"]),
+        "exec_disable": get_value(post, "exec_disable", defaults["exec_disable"]),
+        "images": get_value(post, "images", defaults["images"]),
+        "oss": get_bool(post, "oss", defaults["oss"]),
+        "local_provider": get_value(post, "local_provider", defaults["local_provider"]),
+        "sandbox_mode": get_value(post, "sandbox_mode", defaults["sandbox_mode"]),
+        "profile": get_value(post, "profile", defaults["profile"]),
+        "full_auto": get_bool(post, "full_auto", defaults["full_auto"]),
+        "dangerous_bypass": get_bool(
+            post, "dangerous_bypass", defaults["dangerous_bypass"]
+        ),
+        "cd_dir": get_value(post, "cd_dir", defaults["cd_dir"]),
+        "skip_git_repo_check": get_bool(
+            post, "skip_git_repo_check", defaults["skip_git_repo_check"]
+        ),
+        "add_dirs": get_value(post, "add_dirs", defaults["add_dirs"]),
+        "output_schema": get_value(post, "output_schema", defaults["output_schema"]),
+        "color": get_value(post, "color", defaults["color"]),
+        "json_output": get_bool(post, "json_output", defaults["json_output"]),
+        "output_last_message_file": get_value(
+            post, "output_last_message_file", defaults["output_last_message_file"]
+        ),
+        "extra_exec_args": get_value(post, "extra_exec_args", defaults["extra_exec_args"]),
         "login_timeout_seconds": get_value(
-            post, "login_timeout_seconds", str(DEFAULT_LOGIN_TIMEOUT_SECONDS)
+            post, "login_timeout_seconds", defaults["login_timeout_seconds"]
         ),
-        "login_config_overrides": get_value(post, "login_config_overrides", ""),
-        "login_enable": get_value(post, "login_enable", ""),
-        "login_disable": get_value(post, "login_disable", ""),
-        "device_auth": get_bool(post, "device_auth", False),
-        "login_api_key": get_value(post, "login_api_key", ""),
-        "extra_login_args": get_value(post, "extra_login_args", ""),
+        "login_config_overrides": get_value(
+            post, "login_config_overrides", defaults["login_config_overrides"]
+        ),
+        "login_enable": get_value(post, "login_enable", defaults["login_enable"]),
+        "login_disable": get_value(post, "login_disable", defaults["login_disable"]),
+        "device_auth": get_bool(post, "device_auth", defaults["device_auth"]),
+        "login_api_key": get_value(post, "login_api_key", defaults["login_api_key"]),
+        "extra_login_args": get_value(post, "extra_login_args", defaults["extra_login_args"]),
         "help_timeout_seconds": get_value(
-            post, "help_timeout_seconds", str(DEFAULT_LOGIN_TIMEOUT_SECONDS)
+            post, "help_timeout_seconds", defaults["help_timeout_seconds"]
         ),
     }
 
@@ -375,7 +528,7 @@ def get_bool(post, key, default=False):
         return default
     value = post.get(key)
     if value is None:
-        return False
+        return default
     return value.lower() in {"1", "true", "on", "yes"}
 
 
@@ -454,7 +607,31 @@ def get_effective_model(form):
     return (form.get("model_select") or "").strip() or DEFAULT_MODEL
 
 
-def build_exec_metrics(result, selected_model, model_catalog, form):
+def extract_thread_id(stdout_text, combined_output):
+    for line in stdout_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "thread.started":
+            thread_id = (item.get("thread_id") or "").strip()
+            if thread_id:
+                return thread_id
+
+    match = re.search(r'"thread_id"\s*:\s*"([^"]+)"', combined_output)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def build_exec_metrics(
+    result, selected_model, model_catalog, form, thread_id=None, resumed=False
+):
     usage, usage_source, event_types = extract_usage_from_output(
         result.get("stdout", ""), result.get("output", "")
     )
@@ -479,6 +656,8 @@ def build_exec_metrics(result, selected_model, model_catalog, form):
 
     return {
         "model": selected_model,
+        "thread_id": thread_id or "",
+        "resumed": resumed,
         "context_window": context_window,
         "context_remaining": context_remaining,
         "usage": usage,
@@ -695,6 +874,156 @@ def get_reasoning_effort_options(model_info):
     if model_info and model_info.get("supported_reasoning_levels"):
         return model_info["supported_reasoning_levels"]
     return DEFAULT_REASONING_EFFORTS
+
+
+def form_has_advanced_overrides(form):
+    defaults = default_form_state()
+    tracked_keys = [
+        "model_select",
+        "model",
+        "reasoning_effort",
+        "reasoning_summary",
+        "model_verbosity",
+        "exec_timeout_seconds",
+        "exec_config_overrides",
+        "exec_enable",
+        "exec_disable",
+        "images",
+        "oss",
+        "local_provider",
+        "sandbox_mode",
+        "profile",
+        "full_auto",
+        "dangerous_bypass",
+        "cd_dir",
+        "skip_git_repo_check",
+        "add_dirs",
+        "output_schema",
+        "color",
+        "json_output",
+        "output_last_message_file",
+        "extra_exec_args",
+    ]
+    for key in tracked_keys:
+        if form.get(key) != defaults.get(key):
+            return True
+    return False
+
+
+def get_theme(request):
+    value = str(request.session.get(SESSION_THEME_KEY) or "dark").strip().lower()
+    if value not in {"dark", "light"}:
+        return "dark"
+    return value
+
+
+def set_theme(request, theme):
+    request.session[SESSION_THEME_KEY] = theme
+    request.session.modified = True
+
+
+def new_chat_state(title, index_hint):
+    resolved_title = (title or "").strip()
+    if not resolved_title:
+        resolved_title = f"Chat {index_hint}"
+    return {
+        "id": uuid.uuid4().hex[:12],
+        "title": resolved_title[:80],
+        "thread_id": "",
+        "messages": [],
+        "settings": default_form_state(),
+        "last_exec_metrics": None,
+    }
+
+
+def sanitize_chat(raw_chat, fallback_title):
+    if not isinstance(raw_chat, dict):
+        raw_chat = {}
+
+    chat_id = str(raw_chat.get("id") or uuid.uuid4().hex[:12]).strip()
+    if not chat_id:
+        chat_id = uuid.uuid4().hex[:12]
+
+    title = str(raw_chat.get("title") or fallback_title).strip()[:80]
+    if not title:
+        title = fallback_title
+
+    thread_id = str(raw_chat.get("thread_id") or "").strip()
+    settings = build_form_state(None, raw_chat.get("settings"))
+
+    messages = []
+    for item in raw_chat.get("messages") or []:
+        if not isinstance(item, dict):
+            continue
+        role = "assistant" if str(item.get("role")).lower() == "assistant" else "user"
+        text = str(item.get("text") or "").strip()
+        if text:
+            messages.append({"role": role, "text": text})
+    if len(messages) > MAX_CHAT_MESSAGES:
+        messages = messages[-MAX_CHAT_MESSAGES:]
+
+    last_exec_metrics = raw_chat.get("last_exec_metrics")
+    if not isinstance(last_exec_metrics, dict):
+        last_exec_metrics = None
+
+    return {
+        "id": chat_id,
+        "title": title,
+        "thread_id": thread_id,
+        "messages": messages,
+        "settings": settings,
+        "last_exec_metrics": last_exec_metrics,
+    }
+
+
+def ensure_chat_state(request):
+    raw_chats = request.session.get(SESSION_CHATS_KEY)
+    chats = []
+    if isinstance(raw_chats, list):
+        for idx, item in enumerate(raw_chats, start=1):
+            chats.append(sanitize_chat(item, f"Chat {idx}"))
+
+    changed = False
+    if not chats:
+        chats = [new_chat_state("", 1)]
+        changed = True
+
+    active_chat_id = str(request.session.get(SESSION_ACTIVE_CHAT_KEY) or "").strip()
+    active_chat = next((item for item in chats if item["id"] == active_chat_id), None)
+    if active_chat is None:
+        active_chat = chats[0]
+        active_chat_id = active_chat["id"]
+        changed = True
+
+    if changed:
+        save_chat_state(request, chats, active_chat_id)
+
+    return chats, active_chat
+
+
+def save_chat_state(request, chats, active_chat_id):
+    request.session[SESSION_CHATS_KEY] = chats
+    request.session[SESSION_ACTIVE_CHAT_KEY] = active_chat_id
+    request.session.modified = True
+
+
+def set_active_chat(request, chats, chat_id):
+    for item in chats:
+        if item["id"] == chat_id:
+            save_chat_state(request, chats, item["id"])
+            return True
+    return False
+
+
+def append_chat_message(chat, role, text):
+    clean_text = (text or "").strip()
+    if not clean_text:
+        return
+    if role not in {"user", "assistant"}:
+        role = "assistant"
+    chat["messages"].append({"role": role, "text": clean_text})
+    if len(chat["messages"]) > MAX_CHAT_MESSAGES:
+        chat["messages"] = chat["messages"][-MAX_CHAT_MESSAGES:]
 
 
 def load_auth_state():

@@ -1,445 +1,279 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Codex Django Control Panel</title>
-    <style>
-        :root {
-            --bg: #f4f6fb;
-            --card: #ffffff;
-            --line: #d3daea;
-            --ink: #151a2b;
-            --muted: #56607a;
-            --ok: #166534;
-            --err: #b00020;
-            --accent: #0f4c81;
-            --accent-soft: #dce9f9;
-        }
-        * { box-sizing: border-box; }
-        body {
-            margin: 0;
-            background: radial-gradient(circle at top right, #dfe9f8 0%, var(--bg) 45%);
-            color: var(--ink);
-            font-family: "Segoe UI", "Noto Sans", Arial, sans-serif;
-        }
-        .wrap {
-            max-width: 1200px;
-            margin: 24px auto 40px;
-            padding: 0 16px;
-        }
-        h1 {
-            margin: 0 0 16px;
-            font-size: 32px;
-            letter-spacing: .3px;
-        }
-        h2 {
-            margin: 0 0 12px;
-            font-size: 22px;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 16px;
-        }
-        @media (min-width: 1000px) {
-            .grid.two {
-                grid-template-columns: 1fr 1fr;
-            }
-        }
-        .card {
-            background: var(--card);
-            border: 1px solid var(--line);
-            border-radius: 14px;
-            padding: 16px;
-            box-shadow: 0 10px 24px rgba(16, 39, 71, 0.05);
-        }
-        .note {
-            background: var(--accent-soft);
-            border: 1px solid #c8dcf8;
-            border-radius: 10px;
-            padding: 10px 12px;
-            margin: 10px 0 0;
-            color: #123a62;
-            font-size: 13px;
-        }
-        .form-grid {
-            display: grid;
-            gap: 10px;
-            grid-template-columns: repeat(12, minmax(0, 1fr));
-        }
-        .field {
-            grid-column: span 12;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .field.half { grid-column: span 6; }
-        .field.third { grid-column: span 4; }
-        @media (max-width: 880px) {
-            .field.half, .field.third { grid-column: span 12; }
-        }
-        label {
-            font-size: 13px;
-            color: var(--muted);
-            font-weight: 600;
-        }
-        input, select, textarea {
-            border: 1px solid #b8c2d9;
-            border-radius: 8px;
-            padding: 9px 10px;
-            font-size: 14px;
-            color: var(--ink);
-            background: #fff;
-        }
-        textarea { min-height: 84px; resize: vertical; }
-        .inline-checks {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            margin: 3px 0 2px;
-        }
-        .inline-checks label {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-weight: 500;
-            color: var(--ink);
-        }
-        button {
-            appearance: none;
-            border: 1px solid #1e5a94;
-            background: linear-gradient(180deg, #1e5a94 0%, #124272 100%);
-            color: #fff;
-            border-radius: 9px;
-            padding: 9px 14px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-        }
-        .subtle-btn {
-            background: #fff;
-            color: #1e5a94;
-        }
-        .status-ok { color: var(--ok); font-weight: 700; }
-        .status-err { color: var(--err); font-weight: 700; }
-        pre {
-            background: #0b1020;
-            color: #e2e8f0;
-            border-radius: 10px;
-            padding: 12px;
-            max-height: 320px;
-            overflow: auto;
-            white-space: pre-wrap;
-            word-break: break-word;
-            margin: 0;
-            font-size: 12px;
-        }
-        code {
-            background: #eef2fa;
-            border-radius: 5px;
-            padding: 1px 4px;
-            font-size: 90%;
-        }
-        .msg { margin: 14px 0 0; font-weight: 600; }
-        .msg.ok { color: var(--ok); }
-        .msg.err { color: var(--err); }
-        .kv p { margin: 6px 0; }
-    </style>
-</head>
-<body>
-    <div class="wrap">
-        <h1>Codex Django Control Panel</h1>
+{% extends "base.html" %}
 
-        <div class="grid two">
-            <section class="card">
-                <h2>Local Auth State</h2>
-                <p>Status:
-                    {% if auth_state.logged_in %}
-                    <span class="status-ok">Logged in</span>
-                    {% else %}
-                    <span class="status-err">Not logged in</span>
-                    {% endif %}
-                </p>
-                <p>Auth mode: <code>{{ auth_state.auth_mode|default:"unknown" }}</code></p>
-                <p>Account ID: <code>{{ auth_state.account_id|default:"unknown" }}</code></p>
-                <p>Token preview: <code>{{ auth_state.token_preview|default:"not found" }}</code></p>
-                <p>Auth file: <code>{{ auth_state.auth_path }}</code></p>
-                <p>CODEX_HOME: <code>{{ auth_state.codex_home }}</code></p>
-                <p>Codex CLI: <code>{{ auth_state.codex_cli_path }}</code></p>
-                <p>Selected model: <code>{{ selected_model }}</code></p>
-                <p>Context window:
-                    <code>{% if selected_model_info and selected_model_info.context_window %}{{ selected_model_info.context_window }}{% else %}unknown{% endif %}</code>
-                </p>
-                {% if auth_state.error %}
-                <p class="msg err">{{ auth_state.error }}</p>
-                {% endif %}
-            </section>
+{% block title %}Codex Chat{% endblock %}
 
-            <section class="card">
-                <h2>Codex Login</h2>
-                <form method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="login">
-                    <div class="form-grid">
-                        <div class="field third">
-                            <label for="login_timeout_seconds">Timeout (seconds)</label>
-                            <input id="login_timeout_seconds" type="text" name="login_timeout_seconds" value="{{ form.login_timeout_seconds }}">
-                        </div>
-                        <div class="field">
-                            <label for="login_config_overrides">`-c / --config` (one per line)</label>
-                            <textarea id="login_config_overrides" name="login_config_overrides">{{ form.login_config_overrides }}</textarea>
-                        </div>
-                        <div class="field half">
-                            <label for="login_enable">`--enable` features (comma separated)</label>
-                            <input id="login_enable" type="text" name="login_enable" value="{{ form.login_enable }}">
-                        </div>
-                        <div class="field half">
-                            <label for="login_disable">`--disable` features (comma separated)</label>
-                            <input id="login_disable" type="text" name="login_disable" value="{{ form.login_disable }}">
-                        </div>
-                        <div class="field">
-                            <label for="login_api_key">API key for `--with-api-key` (optional)</label>
-                            <input id="login_api_key" type="password" name="login_api_key" value="{{ form.login_api_key }}">
-                        </div>
-                        <div class="field">
-                            <label for="extra_login_args">Extra login args (covers any login options not listed)</label>
-                            <input id="extra_login_args" type="text" name="extra_login_args" value="{{ form.extra_login_args }}" placeholder="Example: --device-auth">
-                        </div>
-                        <div class="field">
-                            <div class="inline-checks">
-                                <label><input type="checkbox" name="device_auth" {% if form.device_auth %}checked{% endif %}> `--device-auth`</label>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="inline-checks">
-                        <button type="submit">Run Login</button>
-                    </div>
-                </form>
-                <form method="post" style="margin-top:10px;">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="status">
-                    <input type="hidden" name="login_timeout_seconds" value="{{ form.login_timeout_seconds }}">
-                    <button type="submit" class="subtle-btn">Check Login Status</button>
-                </form>
-            </section>
+{% block content %}
+<div class="layout">
+    <aside class="panel sidebar">
+        <div class="sidebar-title-row">
+            <h2 class="section-title">Chats</h2>
         </div>
-
-        <section class="card" style="margin-top:16px;">
-            <h2>Codex Exec Chat</h2>
+        <form method="post" class="new-chat-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="new_chat">
+            <input type="text" name="new_chat_title" placeholder="New chat name (optional)">
+            <button type="submit" class="btn secondary">New</button>
+        </form>
+        <div class="chat-list">
+            {% for chat in chats %}
+            <form method="post" class="chat-row {% if chat.id == active_chat.id %}active{% endif %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="switch_chat">
+                <input type="hidden" name="chat_id" value="{{ chat.id }}">
+                <button type="submit" class="chat-switch">
+                    <span class="chat-name">{{ chat.title }}</span>
+                    <span class="chat-meta">
+                        {{ chat.messages|length }} msgs
+                        {% if chat.thread_id %} | context on{% else %} | new{% endif %}
+                    </span>
+                </button>
+            </form>
+            {% endfor %}
+        </div>
+        <div class="sidebar-actions">
             <form method="post">
                 {% csrf_token %}
-                <input type="hidden" name="action" value="exec">
-                <div class="form-grid">
-                    <div class="field half">
-                        <label for="model_select">Model (`-m`)</label>
-                        <select id="model_select" name="model_select">
-                            {% for item in model_catalog %}
-                            <option value="{{ item.slug }}" {% if form.model_select == item.slug %}selected{% endif %}>
-                                {{ item.display_name }} ({{ item.slug }})
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="field half">
-                        <label for="model">Custom model override (optional)</label>
-                        <input id="model" type="text" name="model" value="{{ form.model }}" placeholder="If set, overrides dropdown model">
-                    </div>
-                    <div class="field third">
-                        <label for="reasoning_effort">Reasoning effort</label>
-                        <select id="reasoning_effort" name="reasoning_effort">
-                            <option value="" {% if form.reasoning_effort == "" %}selected{% endif %}>default</option>
-                            {% for effort in reasoning_effort_options %}
-                            <option value="{{ effort }}" {% if form.reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="field third">
-                        <label for="reasoning_summary">Reasoning summary</label>
-                        <select id="reasoning_summary" name="reasoning_summary">
-                            <option value="" {% if form.reasoning_summary == "" %}selected{% endif %}>default</option>
-                            <option value="none" {% if form.reasoning_summary == "none" %}selected{% endif %}>none</option>
-                            <option value="auto" {% if form.reasoning_summary == "auto" %}selected{% endif %}>auto</option>
-                            <option value="concise" {% if form.reasoning_summary == "concise" %}selected{% endif %}>concise</option>
-                            <option value="detailed" {% if form.reasoning_summary == "detailed" %}selected{% endif %}>detailed</option>
-                        </select>
-                    </div>
-                    <div class="field third">
-                        <label for="model_verbosity">Verbosity</label>
-                        <select id="model_verbosity" name="model_verbosity">
-                            <option value="" {% if form.model_verbosity == "" %}selected{% endif %}>default</option>
-                            <option value="low" {% if form.model_verbosity == "low" %}selected{% endif %}>low</option>
-                            <option value="medium" {% if form.model_verbosity == "medium" %}selected{% endif %}>medium</option>
-                            <option value="high" {% if form.model_verbosity == "high" %}selected{% endif %}>high</option>
-                        </select>
-                    </div>
-                    <div class="field third">
-                        <label for="exec_timeout_seconds">Timeout (seconds)</label>
-                        <input id="exec_timeout_seconds" type="text" name="exec_timeout_seconds" value="{{ form.exec_timeout_seconds }}">
-                    </div>
-                    <div class="field third">
-                        <label for="color">Color (`--color`)</label>
-                        <select id="color" name="color">
-                            <option value="auto" {% if form.color == "auto" %}selected{% endif %}>auto</option>
-                            <option value="always" {% if form.color == "always" %}selected{% endif %}>always</option>
-                            <option value="never" {% if form.color == "never" %}selected{% endif %}>never</option>
-                        </select>
-                    </div>
-                    <div class="field third">
-                        <label for="sandbox_mode">Sandbox (`--sandbox`)</label>
-                        <select id="sandbox_mode" name="sandbox_mode">
-                            <option value="" {% if form.sandbox_mode == "" %}selected{% endif %}>default</option>
-                            <option value="read-only" {% if form.sandbox_mode == "read-only" %}selected{% endif %}>read-only</option>
-                            <option value="workspace-write" {% if form.sandbox_mode == "workspace-write" %}selected{% endif %}>workspace-write</option>
-                            <option value="danger-full-access" {% if form.sandbox_mode == "danger-full-access" %}selected{% endif %}>danger-full-access</option>
-                        </select>
-                    </div>
-                    <div class="field third">
-                        <label for="local_provider">Local provider (`--local-provider`)</label>
-                        <select id="local_provider" name="local_provider">
-                            <option value="" {% if form.local_provider == "" %}selected{% endif %}>default</option>
-                            <option value="lmstudio" {% if form.local_provider == "lmstudio" %}selected{% endif %}>lmstudio</option>
-                            <option value="ollama" {% if form.local_provider == "ollama" %}selected{% endif %}>ollama</option>
-                        </select>
-                    </div>
-                    <div class="field half">
-                        <label for="profile">Profile (`--profile`)</label>
-                        <input id="profile" type="text" name="profile" value="{{ form.profile }}">
-                    </div>
-                    <div class="field half">
-                        <label for="cd_dir">Working directory (`--cd`)</label>
-                        <input id="cd_dir" type="text" name="cd_dir" value="{{ form.cd_dir }}">
-                    </div>
-                    <div class="field">
-                        <label for="prompt">Message / Prompt</label>
-                        <textarea id="prompt" name="prompt" style="min-height:130px;">{{ form.prompt }}</textarea>
-                    </div>
-                    <div class="field">
-                        <label for="exec_config_overrides">`-c / --config` (one per line)</label>
-                        <textarea id="exec_config_overrides" name="exec_config_overrides">{{ form.exec_config_overrides }}</textarea>
-                    </div>
-                    <div class="field half">
-                        <label for="exec_enable">`--enable` features (comma separated)</label>
-                        <input id="exec_enable" type="text" name="exec_enable" value="{{ form.exec_enable }}">
-                    </div>
-                    <div class="field half">
-                        <label for="exec_disable">`--disable` features (comma separated)</label>
-                        <input id="exec_disable" type="text" name="exec_disable" value="{{ form.exec_disable }}">
-                    </div>
-                    <div class="field">
-                        <label for="images">Image paths (`--image`, one per line)</label>
-                        <textarea id="images" name="images">{{ form.images }}</textarea>
-                    </div>
-                    <div class="field">
-                        <label for="add_dirs">Writable dirs (`--add-dir`, one per line)</label>
-                        <textarea id="add_dirs" name="add_dirs">{{ form.add_dirs }}</textarea>
-                    </div>
-                    <div class="field half">
-                        <label for="output_schema">Output schema file (`--output-schema`)</label>
-                        <input id="output_schema" type="text" name="output_schema" value="{{ form.output_schema }}">
-                    </div>
-                    <div class="field half">
-                        <label for="output_last_message_file">Output file (`-o`, optional)</label>
-                        <input id="output_last_message_file" type="text" name="output_last_message_file" value="{{ form.output_last_message_file }}">
-                    </div>
-                    <div class="field">
-                        <label for="extra_exec_args">Extra exec args (covers any exec options not listed)</label>
-                        <input id="extra_exec_args" type="text" name="extra_exec_args" value="{{ form.extra_exec_args }}" placeholder='Example: --json --skip-git-repo-check --add-dir "C:\work\extra"'>
-                    </div>
-                    <div class="field">
-                        <div class="inline-checks">
-                            <label><input type="checkbox" name="oss" {% if form.oss %}checked{% endif %}> `--oss`</label>
-                            <label><input type="checkbox" name="full_auto" {% if form.full_auto %}checked{% endif %}> `--full-auto`</label>
-                            <label><input type="checkbox" name="dangerous_bypass" {% if form.dangerous_bypass %}checked{% endif %}> `--dangerously-bypass-approvals-and-sandbox`</label>
-                            <label><input type="checkbox" name="skip_git_repo_check" {% if form.skip_git_repo_check %}checked{% endif %}> `--skip-git-repo-check`</label>
-                            <label><input type="checkbox" name="json_output" {% if form.json_output %}checked{% endif %}> `--json`</label>
-                        </div>
-                    </div>
-                </div>
-                <div class="inline-checks">
-                    <button type="submit">Run Codex Exec</button>
-                </div>
+                <input type="hidden" name="action" value="clear_chat">
+                <button type="submit" class="btn subtle full">Clear Current Context</button>
             </form>
-            <p class="note">
-                All known `codex exec` and `codex login` options are covered through dedicated fields plus
-                the extra args inputs for anything new/rare.
-            </p>
-        </section>
-
-        {% if exec_metrics %}
-        <section class="card" style="margin-top:16px;">
-            <h2>Execution Insights</h2>
-            <div class="kv">
-                <p>Model: <code>{{ exec_metrics.model }}</code></p>
-                <p>Reasoning effort: <code>{{ exec_metrics.reasoning_effort }}</code></p>
-                <p>Reasoning summary: <code>{{ exec_metrics.reasoning_summary }}</code></p>
-                <p>Verbosity: <code>{{ exec_metrics.model_verbosity }}</code></p>
-                <p>Usage source: <code>{{ exec_metrics.usage_source }}</code></p>
-                <p>Context window:
-                    <code>{% if exec_metrics.context_window %}{{ exec_metrics.context_window }}{% else %}unknown{% endif %}</code>
-                </p>
-                <p>Estimated context remaining:
-                    <code>{% if exec_metrics.context_remaining != None %}{{ exec_metrics.context_remaining }}{% else %}unknown{% endif %}</code>
-                </p>
-            </div>
-            {% if exec_metrics.usage_pretty %}
-            <h3>Token Usage</h3>
-            <pre>{{ exec_metrics.usage_pretty }}</pre>
-            {% else %}
-            <p class="note">Token usage details were not returned by this run.</p>
-            {% endif %}
-
-            {% if exec_metrics.rate_limits_pretty %}
-            <h3>Rate Limit Details</h3>
-            <pre>{{ exec_metrics.rate_limits_pretty }}</pre>
-            {% else %}
-            <p class="note">Rate-limit remaining values were not exposed by Codex CLI output for this run.</p>
-            {% endif %}
-        </section>
-        {% endif %}
-
-        <section class="card" style="margin-top:16px;">
-            <h2>CLI Help</h2>
-            <form method="post" style="margin-bottom:10px;">
+            <form method="post">
                 {% csrf_token %}
-                <input type="hidden" name="action" value="help">
-                <input type="hidden" name="help_timeout_seconds" value="{{ form.help_timeout_seconds }}">
-                <button type="submit" class="subtle-btn">Refresh Codex --help / exec --help / login --help</button>
+                <input type="hidden" name="action" value="delete_chat">
+                <input type="hidden" name="chat_id" value="{{ active_chat.id }}">
+                <button type="submit" class="btn subtle danger full">Delete Current Chat</button>
             </form>
-            {% if cli_help.root %}
-            <h3>codex --help</h3>
-            <pre>{{ cli_help.root }}</pre>
+        </div>
+        <div class="mini-status">
+            <div><strong>Login:</strong> {% if auth_state.logged_in %}ok{% else %}not logged in{% endif %}</div>
+            <div><strong>Model:</strong> {{ selected_model }}</div>
+            <div><strong>Thread:</strong> {% if active_chat.thread_id %}<code>{{ active_chat.thread_id }}</code>{% else %}none{% endif %}</div>
+        </div>
+    </aside>
+
+    <section class="panel chat-main">
+        <header class="chat-header">
+            <h1 class="page-title">{{ active_chat.title }}</h1>
+            {% if exec_metrics %}
+            <div class="metric-row">
+                <span class="chip">Model: {{ exec_metrics.model }}</span>
+                <span class="chip">Reasoning: {{ exec_metrics.reasoning_effort }}</span>
+                <span class="chip">Context: {% if exec_metrics.context_window %}{{ exec_metrics.context_window }}{% else %}unknown{% endif %}</span>
+                <span class="chip">Remaining: {% if exec_metrics.context_remaining != None %}{{ exec_metrics.context_remaining }}{% else %}unknown{% endif %}</span>
+            </div>
             {% endif %}
-            {% if cli_help.exec %}
-            <h3>codex exec --help</h3>
-            <pre>{{ cli_help.exec }}</pre>
-            {% endif %}
-            {% if cli_help.login %}
-            <h3>codex login --help</h3>
-            <pre>{{ cli_help.login }}</pre>
-            {% endif %}
-        </section>
+        </header>
 
         {% if info_message %}
-        <p class="msg ok">{{ info_message }}</p>
+        <div class="alert ok">{{ info_message }}</div>
         {% endif %}
         {% if error_message %}
-        <p class="msg err">{{ error_message }}</p>
+        <div class="alert err">{{ error_message }}</div>
         {% endif %}
 
-        {% if response_text %}
-        <section class="card" style="margin-top:16px;">
-            <h2>Response</h2>
-            <pre>{{ response_text }}</pre>
-        </section>
-        {% endif %}
+        <div class="messages" id="messageList">
+            {% for item in active_chat.messages %}
+            <article class="message {{ item.role }}">
+                <div class="role">{{ item.role|title }}</div>
+                <pre>{{ item.text }}</pre>
+            </article>
+            {% empty %}
+            <div class="empty-state">No messages yet. Write your first prompt below.</div>
+            {% endfor %}
+        </div>
+
+        <form method="post" class="composer">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="exec">
+            <textarea name="prompt" placeholder="Ask Codex..." required>{{ form.prompt }}</textarea>
+            <div class="composer-row">
+                <button type="submit" class="btn">Send</button>
+                <span class="hint">This chat keeps its own Codex context thread.</span>
+            </div>
+
+            <details class="advanced-block" {% if show_advanced %}open{% endif %}>
+                <summary>Advanced Exec Options</summary>
+                <div class="category-grid">
+                    <details class="category" open>
+                        <summary><span class="icon-badge">M</span> Model</summary>
+                        <div class="field-grid">
+                            <label>
+                                <span>Model</span>
+                                <select name="model_select">
+                                    {% for item in model_catalog %}
+                                    <option value="{{ item.slug }}" {% if form.model_select == item.slug %}selected{% endif %}>
+                                        {{ item.display_name }} ({{ item.slug }})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                            <label>
+                                <span>Custom model override</span>
+                                <input type="text" name="model" value="{{ form.model }}">
+                            </label>
+                            <label>
+                                <span>Reasoning effort</span>
+                                <select name="reasoning_effort">
+                                    <option value="" {% if form.reasoning_effort == "" %}selected{% endif %}>default</option>
+                                    {% for effort in reasoning_effort_options %}
+                                    <option value="{{ effort }}" {% if form.reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                            <label>
+                                <span>Reasoning summary</span>
+                                <select name="reasoning_summary">
+                                    <option value="" {% if form.reasoning_summary == "" %}selected{% endif %}>default</option>
+                                    <option value="none" {% if form.reasoning_summary == "none" %}selected{% endif %}>none</option>
+                                    <option value="auto" {% if form.reasoning_summary == "auto" %}selected{% endif %}>auto</option>
+                                    <option value="concise" {% if form.reasoning_summary == "concise" %}selected{% endif %}>concise</option>
+                                    <option value="detailed" {% if form.reasoning_summary == "detailed" %}selected{% endif %}>detailed</option>
+                                </select>
+                            </label>
+                            <label>
+                                <span>Verbosity</span>
+                                <select name="model_verbosity">
+                                    <option value="" {% if form.model_verbosity == "" %}selected{% endif %}>default</option>
+                                    <option value="low" {% if form.model_verbosity == "low" %}selected{% endif %}>low</option>
+                                    <option value="medium" {% if form.model_verbosity == "medium" %}selected{% endif %}>medium</option>
+                                    <option value="high" {% if form.model_verbosity == "high" %}selected{% endif %}>high</option>
+                                </select>
+                            </label>
+                        </div>
+                    </details>
+
+                    <details class="category">
+                        <summary><span class="icon-badge">R</span> Runtime</summary>
+                        <div class="field-grid">
+                            <label><span>Timeout seconds</span><input type="text" name="exec_timeout_seconds" value="{{ form.exec_timeout_seconds }}"></label>
+                            <label>
+                                <span>Sandbox</span>
+                                <select name="sandbox_mode">
+                                    <option value="" {% if form.sandbox_mode == "" %}selected{% endif %}>default</option>
+                                    <option value="read-only" {% if form.sandbox_mode == "read-only" %}selected{% endif %}>read-only</option>
+                                    <option value="workspace-write" {% if form.sandbox_mode == "workspace-write" %}selected{% endif %}>workspace-write</option>
+                                    <option value="danger-full-access" {% if form.sandbox_mode == "danger-full-access" %}selected{% endif %}>danger-full-access</option>
+                                </select>
+                            </label>
+                            <label><span>Local provider</span>
+                                <select name="local_provider">
+                                    <option value="" {% if form.local_provider == "" %}selected{% endif %}>default</option>
+                                    <option value="lmstudio" {% if form.local_provider == "lmstudio" %}selected{% endif %}>lmstudio</option>
+                                    <option value="ollama" {% if form.local_provider == "ollama" %}selected{% endif %}>ollama</option>
+                                </select>
+                            </label>
+                            <label><span>Profile</span><input type="text" name="profile" value="{{ form.profile }}"></label>
+                            <label><span>Working directory</span><input type="text" name="cd_dir" value="{{ form.cd_dir }}"></label>
+                            <label><span>Color</span>
+                                <select name="color">
+                                    <option value="auto" {% if form.color == "auto" %}selected{% endif %}>auto</option>
+                                    <option value="always" {% if form.color == "always" %}selected{% endif %}>always</option>
+                                    <option value="never" {% if form.color == "never" %}selected{% endif %}>never</option>
+                                </select>
+                            </label>
+                        </div>
+                    </details>
+
+                    <details class="category">
+                        <summary><span class="icon-badge">I</span> Input / Output</summary>
+                        <div class="field-grid">
+                            <label><span>Config overrides (`-c`, one per line)</span><textarea name="exec_config_overrides">{{ form.exec_config_overrides }}</textarea></label>
+                            <label><span>Enable features (`--enable`, csv)</span><input type="text" name="exec_enable" value="{{ form.exec_enable }}"></label>
+                            <label><span>Disable features (`--disable`, csv)</span><input type="text" name="exec_disable" value="{{ form.exec_disable }}"></label>
+                            <label><span>Images (`--image`, one per line)</span><textarea name="images">{{ form.images }}</textarea></label>
+                            <label><span>Writable dirs (`--add-dir`, one per line)</span><textarea name="add_dirs">{{ form.add_dirs }}</textarea></label>
+                            <label><span>Output schema file</span><input type="text" name="output_schema" value="{{ form.output_schema }}"></label>
+                            <label><span>Output message file (`-o`)</span><input type="text" name="output_last_message_file" value="{{ form.output_last_message_file }}"></label>
+                            <label><span>Extra exec args</span><input type="text" name="extra_exec_args" value="{{ form.extra_exec_args }}"></label>
+                            <div class="checks">
+                                <label><input type="checkbox" name="oss" {% if form.oss %}checked{% endif %}> --oss</label>
+                                <label><input type="checkbox" name="full_auto" {% if form.full_auto %}checked{% endif %}> --full-auto</label>
+                                <label><input type="checkbox" name="dangerous_bypass" {% if form.dangerous_bypass %}checked{% endif %}> bypass approvals</label>
+                                <label><input type="checkbox" name="skip_git_repo_check" {% if form.skip_git_repo_check %}checked{% endif %}> --skip-git-repo-check</label>
+                                <label><input type="checkbox" name="json_output" {% if form.json_output %}checked{% endif %}> --json</label>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </details>
+        </form>
+
+        <details class="advanced-block" {% if show_advanced %}open{% endif %}>
+            <summary>Advanced Tools</summary>
+            <div class="category-grid">
+                <details class="category" open>
+                    <summary><span class="icon-badge">L</span> Login</summary>
+                    <form method="post" class="tool-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="login">
+                        <div class="field-grid">
+                            <label><span>Timeout seconds</span><input type="text" name="login_timeout_seconds" value="{{ form.login_timeout_seconds }}"></label>
+                            <label><span>Login config overrides (`-c`)</span><textarea name="login_config_overrides">{{ form.login_config_overrides }}</textarea></label>
+                            <label><span>Enable features</span><input type="text" name="login_enable" value="{{ form.login_enable }}"></label>
+                            <label><span>Disable features</span><input type="text" name="login_disable" value="{{ form.login_disable }}"></label>
+                            <label><span>API key (`--with-api-key` optional)</span><input type="password" name="login_api_key" value="{{ form.login_api_key }}"></label>
+                            <label><span>Extra login args</span><input type="text" name="extra_login_args" value="{{ form.extra_login_args }}"></label>
+                            <div class="checks">
+                                <label><input type="checkbox" name="device_auth" {% if form.device_auth %}checked{% endif %}> --device-auth</label>
+                            </div>
+                        </div>
+                        <div class="tool-actions">
+                            <button type="submit" class="btn secondary">Run Login</button>
+                        </div>
+                    </form>
+                    <form method="post" class="tool-form compact">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="status">
+                        <input type="hidden" name="login_timeout_seconds" value="{{ form.login_timeout_seconds }}">
+                        <button type="submit" class="btn subtle">Check Login Status</button>
+                    </form>
+                </details>
+
+                <details class="category">
+                    <summary><span class="icon-badge">D</span> CLI Help & Debug</summary>
+                    <form method="post" class="tool-form compact">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="help">
+                        <input type="hidden" name="help_timeout_seconds" value="{{ form.help_timeout_seconds }}">
+                        <button type="submit" class="btn subtle">Refresh Codex Help</button>
+                    </form>
+                    {% if cli_help.root %}
+                    <h4>codex --help</h4>
+                    <pre>{{ cli_help.root }}</pre>
+                    {% endif %}
+                    {% if cli_help.exec %}
+                    <h4>codex exec --help</h4>
+                    <pre>{{ cli_help.exec }}</pre>
+                    {% endif %}
+                    {% if cli_help.login %}
+                    <h4>codex login --help</h4>
+                    <pre>{{ cli_help.login }}</pre>
+                    {% endif %}
+                </details>
+            </div>
+        </details>
 
         {% if command_output %}
-        <section class="card" style="margin-top:16px;">
-            <h2>Command Output</h2>
+        <details class="advanced-block">
+            <summary>Command Output</summary>
             <pre>{{ command_output }}</pre>
-        </section>
+        </details>
         {% endif %}
-    </div>
-</body>
-</html>
+
+        {% if exec_metrics and exec_metrics.rate_limits_pretty %}
+        <details class="advanced-block">
+            <summary>Rate Limits</summary>
+            <pre>{{ exec_metrics.rate_limits_pretty }}</pre>
+        </details>
+        {% endif %}
+    </section>
+</div>
+
+<script>
+    (function() {
+        var messageList = document.getElementById("messageList");
+        if (messageList) {
+            messageList.scrollTop = messageList.scrollHeight;
+        }
+    })();
+</script>
+{% endblock %}

@@ -1,4 +1,4 @@
-# Codex Django Control Panel
+# Codex Django Chat UI
 
 This project runs Codex CLI from a Django web app using local browser-based login credentials.
 
@@ -11,6 +11,9 @@ No `sk-` key is required for ChatGPT login mode.
 ## Features
 
 - Django-based web UI (replaces previous Flask app)
+- Multi-chat sessions with independent Codex context threads (`codex exec resume <thread_id>`)
+- Minimal chat-first layout (messages + composer), with advanced options collapsed
+- Master dark theme enabled by default with one-click enable/disable toggle
 - Browser login via `codex login`
 - Login status check via `codex login status`
 - Prompt execution via `codex exec`
@@ -43,8 +46,9 @@ No `sk-` key is required for ChatGPT login mode.
    - `python manage.py migrate`
 4. Start server:
    - `python manage.py runserver`
+   - if port 8000 is blocked on your machine: `python manage.py runserver 127.0.0.1:8010`
 5. Open:
-   - `http://127.0.0.1:8000`
+   - `http://127.0.0.1:8000` (or your custom port)
 
 ## Notes
 
