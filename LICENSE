@@ -1,0 +1,51 @@
+No Production Use License 1.0 (NPUL-1.0)
+
+Copyright (c) 2026
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish, distribute, and sublicense the Software, subject
+to the conditions below.
+
+1. Allowed Uses
+You may use the Software for:
+- personal use
+- education and learning
+- research and experimentation
+- internal testing and evaluation
+- non-production development
+
+2. Prohibited Uses
+You may not use the Software in Production.
+
+"Production" means any environment or use case where the Software is used:
+- to serve real end users, customers, or business operations
+- in a live service or live customer workflow
+- in revenue-generating, commercial, or operational systems
+- as part of a SaaS, hosted service, managed service, or enterprise deployment
+
+3. Redistribution
+If you redistribute the Software or derivative works, you must:
+- include this license text
+- clearly mark modified versions
+- keep all copyright and attribution notices
+
+4. No Trademark Rights
+This license does not grant permission to use any trademarks, trade names, or
+logos of the licensors or third parties.
+
+5. Disclaimer of Warranty
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+6. Limitation of Liability
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.
+
+7. Termination
+Any use in violation of this license automatically terminates your rights under
+this license.
+

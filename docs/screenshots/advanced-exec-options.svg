@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0a1423"/>
+      <stop offset="100%" stop-color="#1b2f4b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1400" height="900" fill="url(#bg)"/>
+  <rect x="16" y="16" width="1368" height="868" rx="16" fill="#16283f" stroke="#33557f"/>
+  <text x="42" y="56" fill="#ffffff" font-family="Segoe UI, Arial" font-size="36" font-weight="700">Advanced Exec Options</text>
+  <rect x="30" y="82" width="1338" height="786" rx="14" fill="#13243a" stroke="#35567f"/>
+  <rect x="42" y="104" width="1314" height="56" rx="12" fill="#192f49" stroke="#37608c"/>
+  <text x="62" y="140" fill="#ffffff" font-family="Segoe UI, Arial" font-size="32" font-weight="700">Model</text>
+  <rect x="42" y="176" width="1314" height="240" rx="12" fill="#182b43" stroke="#35567f"/>
+  <rect x="60" y="212" width="1278" height="50" rx="10" fill="#12243a" stroke="#35567f"/>
+  <rect x="60" y="286" width="1278" height="50" rx="10" fill="#12243a" stroke="#35567f"/>
+  <rect x="60" y="360" width="1278" height="50" rx="10" fill="#12243a" stroke="#35567f"/>
+  <rect x="42" y="432" width="1314" height="84" rx="12" fill="#192f49" stroke="#37608c"/>
+  <text x="62" y="484" fill="#ffffff" font-family="Segoe UI, Arial" font-size="32" font-weight="700">Runtime</text>
+  <rect x="42" y="532" width="1314" height="84" rx="12" fill="#192f49" stroke="#37608c"/>
+  <text x="62" y="584" fill="#ffffff" font-family="Segoe UI, Arial" font-size="32" font-weight="700">Input / Output</text>
+  <text x="62" y="832" fill="#9fc4ea" font-family="Segoe UI, Arial" font-size="24">Collapsed categories with icon badges</text>
+</svg>

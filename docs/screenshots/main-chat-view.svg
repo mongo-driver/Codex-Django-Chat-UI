@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#09111e"/>
+      <stop offset="100%" stop-color="#15253b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1400" height="760" fill="url(#bg)"/>
+  <rect x="26" y="62" width="290" height="670" rx="14" fill="#13243a" stroke="#2a3f5f"/>
+  <rect x="336" y="62" width="1038" height="670" rx="14" fill="#172940" stroke="#2a3f5f"/>
+  <text x="56" y="42" fill="#ffffff" font-family="Segoe UI, Arial" font-size="42" font-weight="700">Codex Chat</text>
+  <text x="54" y="108" fill="#ffffff" font-family="Segoe UI, Arial" font-size="30" font-weight="700">Chats</text>
+  <rect x="50" y="130" width="230" height="42" rx="10" fill="#102237" stroke="#35527b"/>
+  <rect x="286" y="130" width="40" height="42" rx="10" fill="#4ab5f8"/>
+  <text x="299" y="159" fill="#ffffff" font-family="Segoe UI, Arial" font-size="25" font-weight="700">+</text>
+  <rect x="50" y="190" width="266" height="74" rx="12" fill="#183150" stroke="#4ab5f8"/>
+  <text x="62" y="233" fill="#ffffff" font-family="Segoe UI, Arial" font-size="28" font-weight="700">Chat 1</text>
+  <text x="354" y="116" fill="#ffffff" font-family="Segoe UI, Arial" font-size="40" font-weight="700">Main Chat View</text>
+  <rect x="356" y="136" width="924" height="38" rx="12" fill="#1f3a5a"/>
+  <rect x="356" y="190" width="998" height="360" rx="12" fill="#19314e" stroke="#34567d"/>
+  <rect x="374" y="238" width="960" height="88" rx="10" fill="#0f1f33" stroke="#28476b"/>
+  <rect x="374" y="348" width="960" height="180" rx="10" fill="#10223a" stroke="#2a4f73"/>
+  <rect x="356" y="576" width="998" height="112" rx="10" fill="#12243b" stroke="#2f5078"/>
+  <text x="390" y="274" fill="#9fc4ea" font-family="Segoe UI, Arial" font-size="22">User message</text>
+  <text x="390" y="392" fill="#9fc4ea" font-family="Segoe UI, Arial" font-size="22">Assistant reply</text>
+  <text x="390" y="642" fill="#9fc4ea" font-family="Segoe UI, Arial" font-size="24">Prompt input + Send</text>
+</svg>
