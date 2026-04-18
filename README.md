@@ -35,11 +35,12 @@ No `sk-` key is required for ChatGPT login mode.
 
 These screenshots are embedded directly (inline) in the README:
 
-![Main chat view](docs/screenshots/main-chat-view.png)
-![Multi chat and metrics](docs/screenshots/multi-chat-metrics.png)
-![Advanced exec options](docs/screenshots/advanced-exec-options.png)
-![Advanced login tools](docs/screenshots/advanced-login-tools.png)
-![Runtime and input output settings](docs/screenshots/runtime-input-output.png)
+![Main chat view](docs/screenshots/main-chat-view.jpg)
+![Advanced exec options](docs/screenshots/advanced-exec-options.jpg)
+![Runtime settings](docs/screenshots/runtime-settings.jpg)
+![Input and output settings](docs/screenshots/input-output-settings.jpg)
+![Advanced login tools](docs/screenshots/advanced-login-tools.jpg)
+![Rate limits and debug panel](docs/screenshots/rate-limits-debug.jpg)
 
 ## Requirements
 
