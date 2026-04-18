@@ -42,6 +42,20 @@ These screenshots are embedded directly (inline) in the README:
 ![Advanced login tools](docs/screenshots/advanced-login-tools.jpg)
 ![Rate limits and debug panel](docs/screenshots/rate-limits-debug.jpg)
 
+## Automatic Releases
+
+GitHub Actions now creates release assets automatically when you push a tag like `v1.0.0`.
+
+- Source archive:
+  - `codex-django-chat-ui-<tag>-source.zip`
+- Standalone binaries (zipped):
+  - Linux
+  - macOS
+  - Windows (`.exe`)
+
+Workflow file:
+- `.github/workflows/release.yml`
+
 ## Requirements
 
 - Windows (this repo currently targets your local setup)

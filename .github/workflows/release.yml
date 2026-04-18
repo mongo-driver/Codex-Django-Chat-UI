@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build source zip
+        run: |
+          mkdir -p dist
+          git archive --format=zip --output "dist/codex-django-chat-ui-${GITHUB_REF_NAME}-source.zip" HEAD
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-archive
+          path: dist/*.zip
+
+  build-binaries:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            data_sep: ":"
+          - os: macos-latest
+            data_sep: ":"
+          - os: windows-latest
+            data_sep: ";"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build standalone binary
+        run: |
+          pyinstaller --clean --noconfirm --onefile --name codex-django-chat-ui --add-data "codexui/templates${{ matrix.data_sep }}codexui/templates" run_codex_chat.py
+
+      - name: Package binary zip
+        run: |
+          python scripts/package_release_binary.py --version "${{ github.ref_name }}"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.os }}
+          path: dist/*.zip
+
+  publish-release:
+    needs:
+      - build-source
+      - build-binaries
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release-assets/**/*.zip
